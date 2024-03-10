@@ -16,6 +16,15 @@ use App\Http\Controllers\Api\AuthController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/forget-password', [AuthController::class, 'forgetPassword']);
+Route::post('/password/email', [AuthController::class, 'sendResetLinkEmail']);
+Route::post('/password/reset/{token}', [AuthController::class, 'resetPassword'])->name('password.reset');
+
+Route::middleware('auth:api')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/profile', [AuthController::class, 'profile']);
+});
+
 Route::middleware('auth:api')->get('/user', function (Request $request) {
     return $request->user();
 });
