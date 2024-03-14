@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Password;
 use App\Notifications\ResetPasswordNotification;
 use Illuminate\Auth\Events\PasswordReset;
-
+use Illuminate\Auth\Events\Registered;
 
 class AuthController extends Controller
 {
@@ -27,7 +27,7 @@ class AuthController extends Controller
         $validator = Validator::make($request->all(), [
             'last_name' => 'required|string|max:255',
             'family_name' => 'required|string|max:255',
-            'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
+            'email' => 'required|string|lowercase|email|max:255|unique:users',
             'password' => 'required|confirmed|min:8',
             'phone_number' => 'required',
             'user_type' => 'required|string',
@@ -43,13 +43,17 @@ class AuthController extends Controller
             'phone_number' => $request->phone_number,
             'email' => $request->email,
             'password' => Hash::make($request->password),
-            'user_type' => $request->user_type
+            'user_type' => $request->user_type,
+            'remember_token' => Str::random(60), // Generate verification token
         ]);
 
+        // Send verification email
+        event(new Registered($user));
+
+        // Create access token
         $token = $user->createToken('API Token')->accessToken;
 
-        return $this->jsonResponse(1,
-        [
+        return $this->jsonResponse(1, [
             'user' => $user,
             'token' => $token
         ]);
@@ -146,7 +150,7 @@ class AuthController extends Controller
         }
 
         $token = Str::random(60);
-
+        // dd($token);
         $user->notify(new ResetPasswordNotification($token));
 
         return $this->jsonResponse(1, ['message' => 'Password reset link sent to your email']);
@@ -160,11 +164,16 @@ class AuthController extends Controller
      */
     public function resetPassword(Request $request)
     {
-        $request->validate([
+        // dd($request);
+        $validator = Validator::make($request->all(), [
             'token' => 'required',
             'email' => 'required|email',
             'password' => 'required|confirmed|min:8',
         ]);
+
+        if ($validator->fails()) {
+            return $this->jsonResponse(0, $validator->errors());
+        }
 
         $user = User::where('email', $request->email)->first();
 

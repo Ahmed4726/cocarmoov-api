@@ -3,6 +3,8 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\VerificationController;
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -16,13 +18,16 @@ use App\Http\Controllers\Api\AuthController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-Route::post('/forget-password', [AuthController::class, 'forgetPassword']);
+// Route::post('/forget-password', [AuthController::class, 'forgetPassword']);
 Route::post('/password/email', [AuthController::class, 'sendResetLinkEmail']);
-Route::post('/password/reset/{token}', [AuthController::class, 'resetPassword'])->name('password.reset');
+Route::post('/password/reset', [AuthController::class, 'resetPassword'])->name('password.reset');
 
 Route::middleware('auth:api')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/profile', [AuthController::class, 'profile']);
+    Route::post('/verify-email', [VerificationController::class, 'verify'])->name('verification.verify');
+    Route::post('/resend-verification-email', [VerificationController::class, 'resend'])->name('verification.resend');
+
 });
 
 Route::middleware('auth:api')->get('/user', function (Request $request) {
