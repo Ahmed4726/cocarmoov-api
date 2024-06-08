@@ -11,11 +11,23 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Password;
 use App\Notifications\ResetPasswordNotification;
+use App\Services\OtpService;
+use Exception;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Events\Registered;
 
 class AuthController extends Controller
 {
+
+
+
+    protected $otpService;
+
+    public function __construct(OtpService $otpService)
+    {
+        $this->otpService = $otpService;
+    }
+
     /**
      * Register a new user.
      *
@@ -24,9 +36,13 @@ class AuthController extends Controller
      */
     public function register(Request $request)
     {
+        try
+        {
+        $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
         $validator = Validator::make($request->all(), [
             'last_name' => 'required|string|max:255',
-            'family_name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:users',
             'password' => 'required|confirmed|min:8',
             'phone_number' => 'required',
@@ -39,24 +55,39 @@ class AuthController extends Controller
 
         $user = User::create([
             'last_name' => $request->last_name,
-            'family_name' => $request->family_name,
+            'family_name' => $request->first_name,
             'phone_number' => $request->phone_number,
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'user_type' => $request->user_type,
             'remember_token' => Str::random(60), // Generate verification token
+            'marketing_emails' => $request->marketing_emails,
+            'otp' => $otp,
         ]);
 
+        // $email_token = $user->remember_token;
         // Send verification email
-        event(new Registered($user));
+        // event(new Registered($user));
+        // $user->sendEmailVerificationNotification();
+
+        
+        // $user->sendOtpNotification($otp); // Custom method to send OTP
 
         // Create access token
         $token = $user->createToken('API Token')->accessToken;
 
+        $user = User::where('email', $request->email)->select('id','family_name as first_name','last_name','phone_number','email')->first();
+
+        $this->otpService->generateOtp($request->phone_number);
+
         return $this->jsonResponse(1, [
             'user' => $user,
+            'email-otp' => $otp,
             'token' => $token
         ]);
+        } catch(Exception) {
+            return jsonResponse(0, ['error' => 'An error occurred']);
+        }
     }
 
     /**
@@ -67,11 +98,44 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
+        try
+        {
         $credentials = $request->only('email', 'password');
 
-        if (Auth::attempt($credentials)) {
-            $user = $request->user();
+        if (Auth::attempt($credentials))
+        {
+            $email_verify = User::where('email', $request->email)->first();
+
+            $user = User::where('email', $request->email)->select('id','family_name as first_name','last_name','phone_number','photo', 'birthday', 'place_of_birth','language','adddress','postal_code','city','IBAN_number','id_card','bank_details','email')->first();
             $token = auth()->user()->createToken('API Token')->accessToken;
+
+
+            if (!$email_verify) {
+                return $this->jsonResponse(0, ['error' => 'User not found']);
+            }
+
+            if (is_null($email_verify->email_verified_at) && $email_verify->phone_verification == 'false') {
+                return $this->jsonResponse(0, ['error' => 'Email and Phone number are not verified',
+                    // 'user' => $user,
+                    'token' => $token
+                ]);
+            }
+
+            if (is_null($email_verify->email_verified_at)) {
+                return $this->jsonResponse(0, ['error' => 'Email is not verified',
+                    // 'user' => $user,
+                    'token' => $token
+                ]);
+            }
+
+            if ($email_verify->phone_verification == 'false') {
+                return $this->jsonResponse(0, ['error' => 'Phone number is not verified',
+                // 'user' => $user,
+                'token' => $token
+                ]);
+            }
+
+
 
             return $this->jsonResponse(1,
             [
@@ -81,6 +145,10 @@ class AuthController extends Controller
         }
 
         return $this->jsonResponse(0, ['error' => 'Invalid credentials']);
+    }
+    catch(Exception) {
+        return jsonResponse(0, ['error' => 'An error occurred']);
+    }
     }
 
 
@@ -92,9 +160,15 @@ class AuthController extends Controller
      */
     public function logout(Request $request)
     {
+        try
+        {
         $request->user()->token()->revoke();
 
         return $this->jsonResponse(1, ['message' => 'User Logout successfull']);
+        }
+        catch(Exception) {
+            return jsonResponse(0, ['error' => 'An error occurred']);
+        }
     }
 
     /**
@@ -105,8 +179,13 @@ class AuthController extends Controller
      */
     public function profile(Request $request)
     {
-        $user = $request->user();
+        try{
+        $user = User::where('id', auth()->user()->id)->select('id','family_name as first_name','last_name','phone_number','photo', 'birthday', 'place_of_birth','language','adddress','postal_code','city','IBAN_number','id_card','bank_details','email')->first();
         return $this->jsonResponse(1, ['user' => $user]);
+        }
+        catch(Exception) {
+            return jsonResponse(0, ['error' => 'An error occurred']);
+        }
     }
 
 
@@ -118,6 +197,8 @@ class AuthController extends Controller
      */
     public function forgetPassword(Request $request)
     {
+        try
+        {
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
         ]);
@@ -133,15 +214,21 @@ class AuthController extends Controller
         return $response == Password::RESET_LINK_SENT
             ? $this->jsonResponse(1, ['message' => 'Password reset link sent to your email'])
             : $this->jsonResponse(0, ['error' => 'Unable to send reset link. Please check your email.']);
+    } catch(Exception) {
+        return jsonResponse(0, ['error' => 'An error occurred']);
+    }
     }
 
 
     public function sendResetLinkEmail(Request $request)
     {
-        // dd($request);
         $request->validate([
             'email' => 'required|email',
         ]);
+
+        try
+        {
+        // dd($request);
 
         $user = User::where('email', $request->email)->first();
 
@@ -151,9 +238,17 @@ class AuthController extends Controller
 
         $token = Str::random(60);
         // dd($token);
-        $user->notify(new ResetPasswordNotification($token));
+        // $user->notify(new ResetPasswordNotification($token));
 
-        return $this->jsonResponse(1, ['message' => 'Password reset link sent to your email']);
+        return $this->jsonResponse(1,
+        [
+            'message' => 'Password reset link sent to your email',
+            'token' => $token
+        ]);
+    }
+    catch(Exception) {
+        return jsonResponse(0, ['error' => 'An error occurred']);
+    }
     }
 
     /**
@@ -164,6 +259,8 @@ class AuthController extends Controller
      */
     public function resetPassword(Request $request)
     {
+        try
+        {
         // dd($request);
         $validator = Validator::make($request->all(), [
             'token' => 'required',
@@ -192,6 +289,10 @@ class AuthController extends Controller
         ]);
 
         return $this->jsonResponse(1, ['message' => 'Password reset successful']);
+    }
+    catch(Exception) {
+        return jsonResponse(0, ['error' => 'An error occurred']);
+    }
     }
 
     /**

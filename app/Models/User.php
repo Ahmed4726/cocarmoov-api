@@ -3,6 +3,9 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+use App\Notifications\SendOtpNotification;
+use App\Notifications\SendPhoneChangeOtpNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -22,9 +25,12 @@ class User extends Authenticatable
         'family_name',
         'phone_number',
         'email',
+        'otp',
         'password',
         'user_type',
         'quantity',
+        'marketing_emails',
+        'remember_token'
     ];
 
     /**
@@ -46,4 +52,14 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
     ];
+
+    public function sendOtpNotification($otp)
+    {
+        $this->notify(new SendOtpNotification($otp));
+    }
+
+    public function sendPhoneChangeOtpNotification($otp)
+    {
+        $this->notify(new SendPhoneChangeOtpNotification($otp));
+    }
 }
